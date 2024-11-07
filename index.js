@@ -1,42 +1,41 @@
 const axios = require('axios');
+const cheerio = require('cheerio');
 
-async function scrapeTimesOfIndia() {
+const extractLinks = async (url) => {
     try {
-        const url = 'https://timesofindia.indiatimes.com/';
+        const response = await axios.get(url);
+        const data = response.data;
+        const $ = cheerio.load(data);
 
-        const { data } = await axios.get(url);
+        const links = [];
 
-        const links = extractLinks(data);
+        // Selecting all anchor tags and extracting href 
+        $('a').each((index, element) => {
+            const link = $(element).attr('href');
+            // Make sure the href attribute exists and is not empty
+            if (link && link.trim() !== '') {
+                links.push(link);
+            }
+        });
 
-        const validLinks = filterValidLinks(links);
-
-        console.log(`Total Links Scraped: ${links.length}`);
-        console.log("Valid Article Links:", validLinks);
-        console.log(`Valid Article Links count: ${validLinks.length}`);
-
+        return links;
     } catch (error) {
-        console.error("Error scraping the website:", error);
+        console.error('Error fetching or parsing the webpage:', error);
+        return [];
     }
-}
+};
+
+const url = 'https://timesofindia.indiatimes.com/';
+extractLinks(url).then((links) => {
+    console.log('Total links count:', links.length);
 
 
-function extractLinks(html) {
-    
-    const linkRegex = /href="(https?:\/\/[^"]+)"/g;
-    const links = [];
-    let match;
-
-   
-    while ((match = linkRegex.exec(html)) !== null) {
-        links.push(match[1]); 
+    const findValidUrls = links.filter(href => {
+        const validUrls = /articleshow/.test(href) && /cms/.test(href);
+        return validUrls;
+    });
+    if (findValidUrls) {
+        console.log('Valid URLs:', findValidUrls);
+        console.log('Valid URLs count:', findValidUrls.length);
     }
-    return links;
-}
-
-function filterValidLinks(links) {
-    const validLinks = links.filter(link => link.includes('articleshow') && link.includes('cms'));
-    return validLinks;
-}
-
-
-scrapeTimesOfIndia();
+});
