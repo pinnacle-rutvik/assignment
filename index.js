@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const connection = require('./db');
 
 const extractLinks = async (url) => {
     try {
@@ -9,10 +10,8 @@ const extractLinks = async (url) => {
 
         const links = [];
 
-        // Selecting all anchor tags and extracting href 
         $('a').each((index, element) => {
             const link = $(element).attr('href');
-            // Make sure the href attribute exists and is not empty
             if (link && link.trim() !== '') {
                 links.push(link);
             }
@@ -25,17 +24,38 @@ const extractLinks = async (url) => {
     }
 };
 
-const url = 'https://timesofindia.indiatimes.com/';
-extractLinks(url).then((links) => {
+const insertValidUrls = (urls) => {
+    urls.forEach(url => {
+        connection.execute(
+            'INSERT INTO valid_urls (url) VALUES (?)',
+            [url],
+            (err, results) => {
+                if (err) {
+                    console.error('Error inserting URL:', err);
+                }
+            }
+        );
+    });
+    console.log(`Inserted ${urls.length} valid URLs.`);
+};
+
+// Main function to extract, filter and insert URLs
+const scrapeAndInsertValidUrls = async (url) => {
+
+    const links = await extractLinks(url);
     console.log('Total links count:', links.length);
 
+    const validUrls = links.filter(href => /articleshow/.test(href) && /cms/.test(href));
 
-    const findValidUrls = links.filter(href => {
-        const validUrls = /articleshow/.test(href) && /cms/.test(href);
-        return validUrls;
-    });
-    if (findValidUrls) {
-        console.log('Valid URLs:', findValidUrls);
-        console.log('Valid URLs count:', findValidUrls.length);
+    // If valid URLs are found, insert them into MySQL
+    if (validUrls.length > 0) {
+        console.log('Valid URLs:', validUrls);
+        console.log('Valid URLs count:', validUrls.length);
+        insertValidUrls(validUrls);
+    } else {
+        console.log('No valid URLs found.');
     }
-});
+};
+
+const url = 'https://timesofindia.indiatimes.com/';
+scrapeAndInsertValidUrls(url);
