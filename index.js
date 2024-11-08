@@ -2,22 +2,26 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const connection = require('./db');
 
-const extractLinks = async (url) => {
+const extractLinks = async (urls) => {
+    const allLinks = [];
     try {
-        const response = await axios.get(url);
-        const data = response.data;
-        const $ = cheerio.load(data);
+        for (let url of urls) {
+            const response = await axios.get(url);
+            const data = response.data;
+            const $ = cheerio.load(data);
 
-        const links = [];
+            const links = [];
 
-        $('a').each((index, element) => {
-            const link = $(element).attr('href');
-            if (link && link.trim() !== '') {
-                links.push(link);
-            }
-        });
+            $('a').each((index, element) => {
+                const link = $(element).attr('href');
+                if (link && link.trim() !== '') {
+                    links.push(link);
+                }
+            });
 
-        return links;
+            allLinks.push({ url, links });
+        }
+        return allLinks;
     } catch (error) {
         console.error('Error fetching or parsing the webpage:', error);
         return [];
@@ -39,23 +43,54 @@ const insertValidUrls = (urls) => {
     console.log(`Inserted ${urls.length} valid URLs.`);
 };
 
-// Main function to extract, filter and insert URLs
-const scrapeAndInsertValidUrls = async (url) => {
+const scrapeAndInsertValidUrls = async (urls) => {
+    try {
+        const allLinks = await extractLinks(urls);
+        console.log(`Scraped links from ${urls.length} URLs`);
 
-    const links = await extractLinks(url);
-    console.log('Total links count:', links.length);
+        const validUrls = [];
 
-    const validUrls = links.filter(href => /articleshow/.test(href) && /cms/.test(href));
+        allLinks.forEach(({ url, links }) => {
 
-    // If valid URLs are found, insert them into MySQL
-    if (validUrls.length > 0) {
-        console.log('Valid URLs:', validUrls);
-        console.log('Valid URLs count:', validUrls.length);
-        insertValidUrls(validUrls);
-    } else {
-        console.log('No valid URLs found.');
+            const filteredLinks = links.filter(href => /articleshow/.test(href) && /cms/.test(href));
+
+            if (filteredLinks.length > 0) {
+                validUrls.push(...filteredLinks);
+            } else {
+                console.log(`No valid URLs found for ${url}.`);
+            }
+        });
+
+        if (validUrls.length > 0) {
+            console.log('Inserting valid URLs...');
+            insertValidUrls(validUrls);
+        } else {
+            console.log('No valid URLs to insert.');
+        }
+    } catch (error) {
+        console.error('Error scraping and inserting URLs:', error);
     }
 };
 
-const url = 'https://timesofindia.indiatimes.com/';
-scrapeAndInsertValidUrls(url);
+const getSourceUrls = () => {
+    connection.execute(
+        'SELECT url FROM urls',
+        async (err, results) => {
+            if (err) {
+                console.error('Error fetching URLs from DB:', err);
+                return;
+            }
+
+            if (results && results.length > 0) {
+                console.log(`Found ${results.length} URLs in the database.`);
+                const urls = results.map(result => result.url);
+                await scrapeAndInsertValidUrls(urls);
+            } else {
+                console.log('No URLs found in the database.');
+            }
+        }
+    );
+};
+
+// Start the process
+getSourceUrls();
